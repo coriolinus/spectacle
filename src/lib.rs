@@ -259,3 +259,79 @@ macro_rules! impl_map {
 
 impl_map!(std::collections::HashMap);
 impl_map!(std::collections::BTreeMap);
+
+macro_rules! impl_serde_json {
+    ($($t:ident)::+) => {
+        #[cfg(feature = "serde-json")]
+        impl Spectacle for $($t)::+ {
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            where
+                F: Fn(&Breadcrumbs, &dyn Any),
+            {
+                visit(&breadcrumbs, self);
+            }
+        }
+    };
+
+    ($t:ident, $($ts:ident),+ $(,)?) => {
+        impl_primitive!($t);
+        impl_primitive!($($ts),*);
+    };
+}
+
+impl_serde_json!(serde_json::Error);
+impl_serde_json!(serde_json::Number);
+
+#[cfg(feature = "serde-json")]
+impl Spectacle for serde_json::Map<String, serde_json::Value> {
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    where
+        F: Fn(&Breadcrumbs, &dyn Any),
+    {
+        visit(&breadcrumbs, self);
+        for (k, v) in self.iter() {
+            let mut breadcrumbs = breadcrumbs.clone();
+            breadcrumbs.push_back(Breadcrumb::Index(format!("{}", k)));
+            v.introspect_from(breadcrumbs, &visit);
+        }
+    }
+}
+
+#[cfg(feature = "serde-json")]
+impl Spectacle for serde_json::Value {
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    where
+        F: Fn(&Breadcrumbs, &dyn Any),
+    {
+        visit(&breadcrumbs, self);
+
+        match self {
+            serde_json::Value::Bool(x) => {
+                let mut breadcrumbs = breadcrumbs.clone();
+                breadcrumbs.push_back(Breadcrumb::EnumVariant("Bool"));
+                x.introspect_from(breadcrumbs, &visit);
+            }
+            serde_json::Value::Number(x) => {
+                let mut breadcrumbs = breadcrumbs.clone();
+                breadcrumbs.push_back(Breadcrumb::EnumVariant("Number"));
+                x.introspect_from(breadcrumbs, &visit);
+            }
+            serde_json::Value::String(x) => {
+                let mut breadcrumbs = breadcrumbs.clone();
+                breadcrumbs.push_back(Breadcrumb::EnumVariant("String"));
+                x.introspect_from(breadcrumbs, &visit);
+            }
+            serde_json::Value::Array(x) => {
+                let mut breadcrumbs = breadcrumbs.clone();
+                breadcrumbs.push_back(Breadcrumb::EnumVariant("Array"));
+                x.introspect_from(breadcrumbs, &visit);
+            }
+            serde_json::Value::Object(x) => {
+                let mut breadcrumbs = breadcrumbs.clone();
+                breadcrumbs.push_back(Breadcrumb::EnumVariant("Object"));
+                x.introspect_from(breadcrumbs, &visit);
+            }
+            _ => {}
+        }
+    }
+}
