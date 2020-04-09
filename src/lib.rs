@@ -1,3 +1,18 @@
+//! ## ![Opt-in Runtime Introspection](../../../media/oiri.png)
+//!
+//! This crate provides the `Spectacle` trait. Types implementing `Spectacle`
+//! can recursively walk into their structure, calling their visitor function
+//! for both themselves and all children. It operates via the [`Any`
+//! trait](https://doc.rust-lang.org/std/any/trait.Any.html).
+//!
+//! Note that because `Any` is only implemented for `'static` items,
+//! this trait can only be implemented for owned or `'static` objects which
+//! themselves contain no non-`'static` references.
+//!
+//! It also includes the trail of accessors and selectors describing how to get
+//! to the current location from the root object. Given those two things, it is
+//! straightforward to find and access the portion of data of interest.
+
 use impl_tuples::impl_tuples;
 use std::any::Any;
 
@@ -122,3 +137,45 @@ impl_array!(
 );
 
 impl_tuples!(32);
+
+impl<T> Spectacle for Option<T>
+where
+    T: 'static + Spectacle,
+{
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    where
+        F: Fn(&Breadcrumbs, &dyn Any),
+    {
+        visit(&breadcrumbs, self);
+        if let Some(t) = self {
+            let mut breadcrumbs = breadcrumbs.clone();
+            breadcrumbs.push_back(Breadcrumb::EnumVariant("Some"));
+            t.introspect_from(breadcrumbs, &visit);
+        }
+    }
+}
+
+impl<T, E> Spectacle for Result<T, E>
+where
+    T: 'static + Spectacle,
+    E: 'static + Spectacle,
+{
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    where
+        F: Fn(&Breadcrumbs, &dyn Any),
+    {
+        visit(&breadcrumbs, self);
+        match self {
+            Ok(t) => {
+                let mut breadcrumbs = breadcrumbs.clone();
+                breadcrumbs.push_back(Breadcrumb::EnumVariant("Ok"));
+                t.introspect_from(breadcrumbs, &visit);
+            }
+            Err(e) => {
+                let mut breadcrumbs = breadcrumbs.clone();
+                breadcrumbs.push_back(Breadcrumb::EnumVariant("Err"));
+                e.introspect_from(breadcrumbs, &visit);
+            }
+        }
+    }
+}
