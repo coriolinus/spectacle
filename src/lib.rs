@@ -179,3 +179,83 @@ where
         }
     }
 }
+
+macro_rules! impl_list {
+    ($($t:ident)::+) => {
+        #[cfg(feature = "collections")]
+        impl<T> Spectacle for $($t)::+<T>
+        where
+            T: 'static + Spectacle,
+        {
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            where
+                F: Fn(&Breadcrumbs, &dyn Any),
+            {
+                visit(&breadcrumbs, self);
+                for (idx, item) in self.iter().enumerate() {
+                    let mut breadcrumbs = breadcrumbs.clone();
+                    breadcrumbs.push_back(Breadcrumb::Index(format!("{}", idx)));
+                    item.introspect_from(breadcrumbs, &visit);
+                }
+            }
+        }
+    };
+}
+
+// it's tedious to make macro rules tail recursion work given the inner list,
+// so we just call the macro once for each here
+impl_list!(Vec);
+impl_list!(std::collections::VecDeque);
+impl_list!(std::collections::LinkedList);
+
+macro_rules! impl_set {
+    ($($t:ident)::+) => {
+        #[cfg(feature = "collections")]
+        impl<T> Spectacle for $($t)::+<T>
+        where
+            T: 'static + Spectacle,
+        {
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            where
+                F: Fn(&Breadcrumbs, &dyn Any),
+            {
+                visit(&breadcrumbs, self);
+                for item in self.iter() {
+                    let mut breadcrumbs = breadcrumbs.clone();
+                    breadcrumbs.push_back(Breadcrumb::SetMember);
+                    item.introspect_from(breadcrumbs, &visit);
+                }
+            }
+        }
+    };
+}
+
+impl_set!(std::collections::HashSet);
+impl_set!(std::collections::BTreeSet);
+impl_set!(std::collections::BinaryHeap);
+
+macro_rules! impl_map {
+    ($($t:ident)::+) => {
+        #[cfg(feature = "collections")]
+        impl<K, V> Spectacle for $($t)::+<K, V>
+        where
+            K: 'static + std::fmt::Debug,
+            V: 'static + Spectacle,
+        {
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            where
+                F: Fn(&Breadcrumbs, &dyn Any),
+            {
+                visit(&breadcrumbs, self);
+                for (k, v) in self.iter() {
+                    let mut breadcrumbs = breadcrumbs.clone();
+                    breadcrumbs.push_back(Breadcrumb::Index(format!("{:?}", k)));
+                    v.introspect_from(breadcrumbs, &visit);
+                }
+            }
+        }
+    };
+}
+
+impl_map!(std::collections::HashMap);
+impl_map!(std::collections::BTreeMap);
