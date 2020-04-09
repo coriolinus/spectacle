@@ -11,7 +11,7 @@ The solution was to introspect, visiting in particular all those values which we
 ## Features
 
 - [x] `Spectacle` trait: visitor over contained fields, variants, etc
-- [ ] `impl Spectacle for $primitive`
+- [x] `impl Spectacle for $primitive`
 - [ ] (default) feature-gated `impl Spectacle for $collection`
 - [ ] feature-gated `impl Spectacle for serde_json::Value`
 - [ ] `#[derive(Spectacle)]`
