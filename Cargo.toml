@@ -1,0 +1,17 @@
+[package]
+name = "spectacle"
+version = "0.1.0"
+authors = ["Peter Goodspeed-Niklaus <peter.r.goodspeedniklaus@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+im = "14.3"
+impl-tuples = { path = "impl-tuples" }
+
+[workspace]
+members = [
+    ".",
+    "impl-tuples",
+]
