@@ -84,31 +84,6 @@ fn impl_introspect_struct(name: &Ident, generics: &Generics, fields: &Fields) ->
     }
 }
 
-fn impl_introspect_enum(
-    name: &Ident,
-    generics: &Generics,
-    variants: &Punctuated<Variant, Comma>,
-) -> TokenStream {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let f = create_generic_ident(&generics);
-
-    quote! {
-        impl #impl_generics Introspect for #name #ty_generics #where_clause
-        {
-            fn introspect_from<#f>(&self, breadcrumbs: Breadcrumbs, visit: #f)
-            where
-                #f: Fn(&Breadcrumbs, &dyn Any),
-            {
-                visit(&breadcrumbs, self);
-
-                match self {
-                    unimplemented!("figure out how to do variants gracefully")
-                }
-            }
-        }
-    }
-}
-
 // TODO: more fine-grained control of field visibility somehow
 // for now, we'll visit all fields, even private ones
 fn recurse_fields(fields: &Fields) -> TokenStream {
@@ -142,4 +117,34 @@ fn recurse_fields(fields: &Fields) -> TokenStream {
             quote! { #( #recurse )* }
         }
     }
+}
+
+fn impl_introspect_enum(
+    name: &Ident,
+    generics: &Generics,
+    variants: &Punctuated<Variant, Comma>,
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let f = create_generic_ident(&generics);
+    let recurse = recurse_variants(variants);
+
+    quote! {
+        impl #impl_generics Introspect for #name #ty_generics #where_clause
+        {
+            fn introspect_from<#f>(&self, breadcrumbs: Breadcrumbs, visit: #f)
+            where
+                #f: Fn(&Breadcrumbs, &dyn Any),
+            {
+                visit(&breadcrumbs, self);
+
+                match self {
+                    #( #recurse ),*
+                }
+            }
+        }
+    }
+}
+
+fn recurse_variants(variants: &Punctuated<Variant, Comma>) -> Vec<TokenStream> {
+    variants.iter().map(|variant| unimplemented!()).collect()
 }
