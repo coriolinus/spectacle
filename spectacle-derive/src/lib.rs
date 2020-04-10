@@ -1,9 +1,10 @@
 use proc_macro2::TokenStream;
 use proc_macro_error::{emit_error, proc_macro_error};
-use quote::{quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned};
+use std::borrow::Borrow;
 use syn::{
     parse_macro_input, parse_quote, punctuated::Punctuated, spanned::Spanned, token::Comma,
-    DeriveInput, Fields, GenericParam, Generics, Ident, Index, Variant,
+    DeriveInput, Fields, GenericParam, Generics, Ident, Index, Type, Variant,
 };
 
 #[proc_macro_derive(Spectacle)]
@@ -67,7 +68,7 @@ fn create_generic_ident(generics: &Generics) -> Ident {
 fn impl_introspect_struct(name: &Ident, generics: &Generics, fields: &Fields) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let f = create_generic_ident(&generics);
-    let recurse = recurse_fields(fields);
+    let recurse = recurse_fields(fields, |field_id| quote!(self.#field_id)).unwrap_or_default();
 
     quote! {
         impl #impl_generics Introspect for #name #ty_generics #where_clause
@@ -86,35 +87,40 @@ fn impl_introspect_struct(name: &Ident, generics: &Generics, fields: &Fields) ->
 
 // TODO: more fine-grained control of field visibility somehow
 // for now, we'll visit all fields, even private ones
-fn recurse_fields(fields: &Fields) -> TokenStream {
+fn recurse_fields<Accessor>(fields: &Fields, access: Accessor) -> Option<TokenStream>
+where
+    Accessor: Fn(Box<dyn quote::ToTokens>) -> TokenStream,
+{
     match fields {
-        Fields::Unit => quote! {},
+        Fields::Unit => None,
         Fields::Named(fields) => {
             let recurse = fields.named.iter().map(|field| {
                 let name = field.ident.clone().expect("named fields have names");
                 let name_lit = syn::LitStr::new(&format!("{}", name), field.span());
+                let field = access(Box::new(name));
 
-                quote_spanned! {field.span() =>  {
+                quote! {{
                     let mut breadcrumbs = breadcrumbs.clone();
                     breadcrumbs.push_back(Breadcrumb::Field(#name_lit));
-                    spectacle::Introspect::introspect_from(self.#name, breadcrumbs, &visit);
+                    spectacle::Introspect::introspect_from(#field, breadcrumbs, &visit);
                 }}
             });
 
-            quote! { #( #recurse )* }
+            Some(quote! { #( #recurse )* })
         }
         Fields::Unnamed(fields) => {
             let recurse = fields.unnamed.iter().enumerate().map(|(i, field)| {
                 let idx = Index::from(i);
+                let field = access(Box::new(idx));
 
-                quote_spanned! {field.span() =>  {
+                quote! {{
                     let mut breadcrumbs = breadcrumbs.clone();
                     breadcrumbs.push_back(Breadcrumb::TupleIndex(#i));
-                    spectacle::Introspect::introspect_from(self.#idx, breadcrumbs, &visit);
+                    spectacle::Introspect::introspect_from(#field, breadcrumbs, &visit);
                 }}
             });
 
-            quote! { #( #recurse )* }
+            Some(quote! { #( #recurse )* })
         }
     }
 }
@@ -145,6 +151,76 @@ fn impl_introspect_enum(
     }
 }
 
+// form an ident to refer to an unnamed type:
+// lowercase + append index
+fn type_var<T>(t: T, n: Option<usize>) -> Ident
+where
+    T: Borrow<Type> + Spanned,
+{
+    let ident = match t.borrow() {
+        Type::Array(t) => return format_ident!("{}s", type_var(t.elem.borrow(), n)),
+        Type::Slice(t) => return format_ident!("{}s", type_var(t.elem.borrow(), n)),
+        Type::Group(t) => return type_var(t.elem.borrow(), n),
+        Type::Paren(t) => return type_var(t.elem.borrow(), n),
+        Type::Ptr(t) => return type_var(t.elem.borrow(), n),
+        Type::Reference(t) => return type_var(t.elem.borrow(), n),
+        Type::Path(t) => t
+            .path
+            .segments
+            .last()
+            .expect("type paths should not be empty")
+            .ident
+            .clone(),
+        Type::Tuple(t) => {
+            let names = t
+                .elems
+                .iter()
+                .map(|tt| type_var(tt, None))
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>();
+            format_ident!("{}", names.join("_"))
+        }
+        _ => {
+            emit_error!(
+                t.span(),
+                "cannot create appropriate type variable for this type"
+            );
+            format_ident!("_0")
+        }
+    };
+    match n {
+        None => ident,
+        Some(n) => format_ident!("{}{}", ident.to_string().to_lowercase(), n),
+    }
+}
+
 fn recurse_variants(variants: &Punctuated<Variant, Comma>) -> Vec<TokenStream> {
-    variants.iter().map(|variant| unimplemented!()).collect()
+    variants
+        .iter()
+        .filter_map(|variant| {
+            if variant.fields.is_empty() {
+                return None;
+            }
+
+            let name = &variant.ident;
+            let field_name = variant.fields.iter().enumerate().map(|(idx, field)| {
+                let idx = if let Fields::Unnamed(_) = variant.fields {
+                    Some(idx)
+                } else {
+                    None
+                };
+                type_var(&field.ty, idx)
+            });
+            let (open_brace, close_brace) = match variant.fields {
+                Fields::Named(_) => ("{", "}"),
+                Fields::Unnamed(_) => ("(", ")"),
+                _ => unreachable!(),
+            };
+            let recurse = recurse_fields(&variant.fields, unimplemented!());
+
+            Some(quote! {
+                #name #open_brace #( #field_name ),* #close_brace => #recurse
+            })
+        })
+        .collect()
 }
