@@ -1,4 +1,5 @@
-use proc_macro::TokenStream;
+use proc_macro2::TokenStream;
+use proc_macro_error::{emit_error, proc_macro_error};
 use quote::{quote, quote_spanned};
 use syn::{
     parse_macro_input, parse_quote, punctuated::Punctuated, spanned::Spanned, token::Comma,
@@ -6,7 +7,8 @@ use syn::{
 };
 
 #[proc_macro_derive(Spectacle)]
-pub fn derive_spectacle(input: TokenStream) -> TokenStream {
+#[proc_macro_error]
+pub fn derive_spectacle(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     let name = input.ident;
@@ -15,7 +17,14 @@ pub fn derive_spectacle(input: TokenStream) -> TokenStream {
     match input.data {
         syn::Data::Struct(data) => impl_introspect_struct(&name, &generics, &data.fields),
         syn::Data::Enum(data) => impl_introspect_enum(&name, &generics, &data.variants),
-        _ => unimplemented!(),
+        syn::Data::Union(_) => {
+            emit_error!(
+                name.span(),
+                "Spectacle can only be derived for structs and enums"
+            );
+
+            TokenStream::new()
+        }
     }
     .into()
 }
@@ -35,7 +44,7 @@ fn add_trait_bounds(mut generics: Generics) -> Generics {
 // Create an unused generic identifier
 fn create_generic_ident(generics: &Generics) -> Ident {
     let mut ident = Ident::new("F", generics.span());
-    let mut n = 0;
+    let mut n: u8 = 0;
     while generics.params.iter().any(|param| match param {
         GenericParam::Type(param) => param.ident == ident,
         GenericParam::Const(param) => param.ident == ident,
@@ -43,15 +52,19 @@ fn create_generic_ident(generics: &Generics) -> Ident {
     }) {
         ident = Ident::new(&format!("F{}", n), generics.span());
         n += 1;
+        if n == std::u8::MAX {
+            emit_error!(
+                generics,
+                "could not generate an appropriate unused type parameter";
+                note = "#[derive(Spectacle)] must be able to generate an unused type parameter F or F{n} where n is in the u16 range";
+                help = "consider removing the type parameter F from your list of generic parameters";
+            );
+        }
     }
     ident
 }
 
-fn impl_introspect_struct(
-    name: &Ident,
-    generics: &Generics,
-    fields: &Fields,
-) -> proc_macro2::TokenStream {
+fn impl_introspect_struct(name: &Ident, generics: &Generics, fields: &Fields) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let f = create_generic_ident(&generics);
     let recurse = recurse_fields(fields);
@@ -75,7 +88,7 @@ fn impl_introspect_enum(
     name: &Ident,
     generics: &Generics,
     variants: &Punctuated<Variant, Comma>,
-) -> proc_macro2::TokenStream {
+) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let f = create_generic_ident(&generics);
 
@@ -98,7 +111,7 @@ fn impl_introspect_enum(
 
 // TODO: more fine-grained control of field visibility somehow
 // for now, we'll visit all fields, even private ones
-fn recurse_fields(fields: &Fields) -> proc_macro2::TokenStream {
+fn recurse_fields(fields: &Fields) -> TokenStream {
     match fields {
         Fields::Unit => quote! {},
         Fields::Named(fields) => {

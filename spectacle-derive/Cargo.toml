@@ -8,6 +8,7 @@ edition = "2018"
 quote = "1.0.3"
 proc-macro2 = "1.0.10"
 syn = "1.0.17"
+proc-macro-error = "1.0.2"
 
 [lib]
 proc-macro = true
