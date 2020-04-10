@@ -13,7 +13,7 @@
 //! to the current location from the root object. Given those two things, it is
 //! straightforward to find and access the portion of data of interest.
 
-use impl_tuples::impl_tuples;
+use spectacle_impl_tuples::impl_tuples;
 use std::any::Any;
 
 #[derive(Clone, PartialEq, Eq, Debug)]

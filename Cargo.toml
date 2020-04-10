@@ -3,11 +3,14 @@ name = "spectacle"
 version = "0.1.0"
 authors = ["Peter Goodspeed-Niklaus <peter.r.goodspeedniklaus@gmail.com>"]
 edition = "2018"
+repository = "https://github.com/coriolinus/spectacle"
+license = "LGPL-3.0"
+description = "Opt-in runtime introspection"
 
 [dependencies]
 im = "14.3"
-impl-tuples = { path = "impl-tuples" }
 serde_json = { version = "1.0", optional = true }
+spectacle-impl-tuples = { path = "impl-tuples", version = "0.1" }
 
 [features]
 default = [ "collections" ]
