@@ -8,6 +8,8 @@ Introspection should not generally be the tool of first resort. However, there a
 
 The solution was to introspect, visiting in particular all those values which were still a `serde_json::Value`. By printing the representation of each, it was possible to discover the appropriate encoding to use.
 
+[![this is not a crisis, this is an opportunity for introspection](media/qwantz-3580.png)](http://www.qwantz.com/index.php?comic=3579)
+
 ## Features
 
 - [x] `Spectacle` trait: visitor over contained fields, variants, etc
