@@ -15,8 +15,7 @@
 
 #[cfg(feature = "derive")]
 pub use spectacle_derive::Spectacle;
-
-use impl_tuples::impl_tuples;
+use spectacle_impl_tuples::impl_tuples;
 use std::any::Any;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
