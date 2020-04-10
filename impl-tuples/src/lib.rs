@@ -35,10 +35,10 @@ pub fn impl_tuples(tokens: TokenStream) -> TokenStream {
         out = quote! {
             #out
 
-            impl<#(#t_n),*> Spectacle for (#(#t_n,)*)
+            impl<#(#t_n),*> Introspect for (#(#t_n,)*)
             where
                 #(
-                    #t_n: 'static + Spectacle,
+                    #t_n: 'static + Introspect,
                 )*
             {
                 fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
