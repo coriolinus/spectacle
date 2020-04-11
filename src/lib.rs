@@ -48,7 +48,7 @@ pub trait Introspect {
     /// child items. Child items should be visited in natural order.
     fn introspect<F>(&self, visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any),
+        F: FnMut(&Breadcrumbs, &dyn Any),
     {
         self.introspect_from(Breadcrumbs::new(), visit);
     }
@@ -65,15 +65,27 @@ pub trait Introspect {
     /// the child.
     fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any);
+        F: FnMut(&Breadcrumbs, &dyn Any);
+}
+
+impl<T> Introspect for &T
+where
+    T: Introspect,
+{
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    where
+        F: FnMut(&Breadcrumbs, &dyn Any),
+    {
+        Introspect::introspect_from(*self, breadcrumbs, visit)
+    }
 }
 
 macro_rules! impl_primitive {
     ($t:ty) => {
         impl Introspect for $t {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
             }
@@ -113,15 +125,15 @@ macro_rules! impl_array {
         where
             T: 'static + Introspect,
         {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
                 for (idx, child) in self.iter().enumerate() {
                     let mut breadcrumbs = breadcrumbs.clone();
                     breadcrumbs.push_back(Breadcrumb::Index(format!("{}", idx)));
-                    child.introspect_from(breadcrumbs, &visit);
+                    child.introspect_from(breadcrumbs, &mut visit);
                 }
             }
         }
@@ -144,15 +156,15 @@ impl<T> Introspect for Option<T>
 where
     T: 'static + Introspect,
 {
-    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any),
+        F: FnMut(&Breadcrumbs, &dyn Any),
     {
         visit(&breadcrumbs, self);
         if let Some(t) = self {
             let mut breadcrumbs = breadcrumbs.clone();
             breadcrumbs.push_back(Breadcrumb::Variant("Some"));
-            t.introspect_from(breadcrumbs, &visit);
+            t.introspect_from(breadcrumbs, &mut visit);
         }
     }
 }
@@ -162,21 +174,21 @@ where
     T: 'static + Introspect,
     E: 'static + Introspect,
 {
-    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any),
+        F: FnMut(&Breadcrumbs, &dyn Any),
     {
         visit(&breadcrumbs, self);
         match self {
             Ok(t) => {
                 let mut breadcrumbs = breadcrumbs.clone();
                 breadcrumbs.push_back(Breadcrumb::Variant("Ok"));
-                t.introspect_from(breadcrumbs, &visit);
+                t.introspect_from(breadcrumbs, &mut visit);
             }
             Err(e) => {
                 let mut breadcrumbs = breadcrumbs.clone();
                 breadcrumbs.push_back(Breadcrumb::Variant("Err"));
-                e.introspect_from(breadcrumbs, &visit);
+                e.introspect_from(breadcrumbs, &mut visit);
             }
         }
     }
@@ -189,15 +201,15 @@ macro_rules! impl_list {
         where
             T: 'static + Introspect,
         {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
                 for (idx, item) in self.iter().enumerate() {
                     let mut breadcrumbs = breadcrumbs.clone();
                     breadcrumbs.push_back(Breadcrumb::Index(format!("{}", idx)));
-                    item.introspect_from(breadcrumbs, &visit);
+                    item.introspect_from(breadcrumbs, &mut visit);
                 }
             }
         }
@@ -217,15 +229,15 @@ macro_rules! impl_set {
         where
             T: 'static + Introspect,
         {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
                 for item in self.iter() {
                     let mut breadcrumbs = breadcrumbs.clone();
                     breadcrumbs.push_back(Breadcrumb::SetMember);
-                    item.introspect_from(breadcrumbs, &visit);
+                    item.introspect_from(breadcrumbs, &mut visit);
                 }
             }
         }
@@ -244,15 +256,15 @@ macro_rules! impl_map {
             K: 'static + std::fmt::Debug,
             V: 'static + Introspect,
         {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
                 for (k, v) in self.iter() {
                     let mut breadcrumbs = breadcrumbs.clone();
                     breadcrumbs.push_back(Breadcrumb::Index(format!("{:?}", k)));
-                    v.introspect_from(breadcrumbs, &visit);
+                    v.introspect_from(breadcrumbs, &mut visit);
                 }
             }
         }
@@ -266,9 +278,9 @@ macro_rules! impl_serde_json {
     ($($t:ident)::+) => {
         #[cfg(feature = "serde-json")]
         impl Introspect for $($t)::+ {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
             }
@@ -286,24 +298,24 @@ impl_serde_json!(serde_json::Number);
 
 #[cfg(feature = "serde-json")]
 impl Introspect for serde_json::Map<String, serde_json::Value> {
-    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any),
+        F: FnMut(&Breadcrumbs, &dyn Any),
     {
         visit(&breadcrumbs, self);
         for (k, v) in self.iter() {
             let mut breadcrumbs = breadcrumbs.clone();
             breadcrumbs.push_back(Breadcrumb::Index(format!("{}", k)));
-            v.introspect_from(breadcrumbs, &visit);
+            v.introspect_from(breadcrumbs, &mut visit);
         }
     }
 }
 
 #[cfg(feature = "serde-json")]
 impl Introspect for serde_json::Value {
-    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any),
+        F: FnMut(&Breadcrumbs, &dyn Any),
     {
         visit(&breadcrumbs, self);
 
@@ -311,27 +323,27 @@ impl Introspect for serde_json::Value {
             serde_json::Value::Bool(x) => {
                 let mut breadcrumbs = breadcrumbs.clone();
                 breadcrumbs.push_back(Breadcrumb::Variant("Bool"));
-                x.introspect_from(breadcrumbs, &visit);
+                x.introspect_from(breadcrumbs, &mut visit);
             }
             serde_json::Value::Number(x) => {
                 let mut breadcrumbs = breadcrumbs.clone();
                 breadcrumbs.push_back(Breadcrumb::Variant("Number"));
-                x.introspect_from(breadcrumbs, &visit);
+                x.introspect_from(breadcrumbs, &mut visit);
             }
             serde_json::Value::String(x) => {
                 let mut breadcrumbs = breadcrumbs.clone();
                 breadcrumbs.push_back(Breadcrumb::Variant("String"));
-                x.introspect_from(breadcrumbs, &visit);
+                x.introspect_from(breadcrumbs, &mut visit);
             }
             serde_json::Value::Array(x) => {
                 let mut breadcrumbs = breadcrumbs.clone();
                 breadcrumbs.push_back(Breadcrumb::Variant("Array"));
-                x.introspect_from(breadcrumbs, &visit);
+                x.introspect_from(breadcrumbs, &mut visit);
             }
             serde_json::Value::Object(x) => {
                 let mut breadcrumbs = breadcrumbs.clone();
                 breadcrumbs.push_back(Breadcrumb::Variant("Object"));
-                x.introspect_from(breadcrumbs, &visit);
+                x.introspect_from(breadcrumbs, &mut visit);
             }
             _ => {}
         }

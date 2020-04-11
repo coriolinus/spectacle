@@ -41,16 +41,16 @@ pub fn impl_tuples(tokens: TokenStream) -> TokenStream {
                     #t_n: 'static + Introspect,
                 )*
             {
-                fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+                fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
                 where
-                    F: Fn(&Breadcrumbs, &dyn Any),
+                    F: FnMut(&Breadcrumbs, &dyn Any),
                 {
                     visit(&breadcrumbs, self);
 
                     #({
                         let mut breadcrumbs = breadcrumbs.clone();
                         breadcrumbs.push_back(Breadcrumb::TupleIndex(#idx));
-                        self.#idx.introspect_from(breadcrumbs, &visit);
+                        self.#idx.introspect_from(breadcrumbs, &mut visit);
                     })*
                 }
             }
