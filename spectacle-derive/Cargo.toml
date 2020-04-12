@@ -3,6 +3,9 @@ name = "spectacle-derive"
 version = "0.1.0"
 authors = ["Peter Goodspeed-Niklaus <peter.r.goodspeedniklaus@gmail.com>"]
 edition = "2018"
+repository = "https://github.com/coriolinus/spectacle"
+license = "LGPL-3.0"
+description = "#[derive(Spectacle)]"
 
 [dependencies]
 quote = "1.0.3"
