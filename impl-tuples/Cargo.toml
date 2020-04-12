@@ -1,6 +1,6 @@
 [package]
 name = "spectacle-impl-tuples"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Peter Goodspeed-Niklaus <peter.r.goodspeedniklaus@gmail.com>"]
 edition = "2018"
 repository = "https://github.com/coriolinus/spectacle"
