@@ -1,6 +1,6 @@
 # Spectacle
 
-![opt-in runtime introspection](media/oiri.png)
+![Opt-in Runtime Introspection](media/oiri.png)
 
 `Spectacle` recursively walks down the structure on which it is called, visiting each struct field, enum variant, etc. It operates via the [`Any` trait](https://doc.rust-lang.org/std/any/trait.Any.html). It also includes the trail of accessors and selectors describing how to get to the current location from the root object. Given those two things, it is straightforward to find and access the portion of data of interest.
 
@@ -8,7 +8,7 @@ Introspection should not generally be the tool of first resort. However, there a
 
 The solution was to introspect, visiting in particular all those values which were still a `serde_json::Value`. By printing the representation of each, it was possible to discover the appropriate encoding to use.
 
-> [![This is not a crisis, this is an opportunity for introspection.](media/qwantz-3580.png)](http://www.qwantz.com/index.php?comic=3579)
+> [![This is not a crisis, this is an opportunity... for INTROSPECTION!](media/qwantz-3580.png)](http://www.qwantz.com/index.php?comic=3579)
 >
 > [_Dinosaur Comics_ by Ryan North](http://www.qwantz.com/index.php?comic=3579)
 
@@ -19,4 +19,4 @@ The solution was to introspect, visiting in particular all those values which we
 - [x] `impl Spectacle for $primitive`
 - [x] (default) feature-gated `impl Spectacle for $collection`
 - [x] feature-gated `impl Spectacle for serde_json::Value`
-- [ ] `#[derive(Spectacle)]`
+- [x] `#[derive(Spectacle)]`

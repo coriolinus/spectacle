@@ -1,6 +1,6 @@
 //! ## ![Opt-in Runtime Introspection](../../../media/oiri.png)
 //!
-//! This crate provides the `Spectacle` trait. Types implementing `Spectacle`
+//! This crate provides the `Introspect` trait. Types implementing `Introspect`
 //! can recursively walk into their structure, calling their visitor function
 //! for both themselves and all children. It operates via the [`Any`
 //! trait](https://doc.rust-lang.org/std/any/trait.Any.html).
@@ -13,13 +13,15 @@
 //! to the current location from the root object. Given those two things, it is
 //! straightforward to find and access the portion of data of interest.
 
+#[cfg(feature = "derive")]
+pub use spectacle_derive::Spectacle;
 use spectacle_impl_tuples::impl_tuples;
 use std::any::Any;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Breadcrumb {
-    EnumVariant(&'static str),
-    StructField(&'static str),
+    Variant(&'static str),
+    Field(&'static str),
     Index(String),
     TupleIndex(usize),
     SetMember,
@@ -34,7 +36,7 @@ pub type Breadcrumbs = im::vector::Vector<Breadcrumb>;
 /// Note that because `Any` is only implemented for `'static` items,
 /// this trait can only be implemented for owned or `'static` objects which
 /// themselves contain no non-`'static` references.
-pub trait Spectacle {
+pub trait Introspect {
     /// Recursively descend through `Self`, visiting it, and then all child items.
     ///
     /// This is a helper function which just calls `introspect_from` with an empty
@@ -46,7 +48,7 @@ pub trait Spectacle {
     /// child items. Child items should be visited in natural order.
     fn introspect<F>(&self, visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any),
+        F: FnMut(&Breadcrumbs, &dyn Any),
     {
         self.introspect_from(Breadcrumbs::new(), visit);
     }
@@ -63,15 +65,44 @@ pub trait Spectacle {
     /// the child.
     fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any);
+        F: FnMut(&Breadcrumbs, &dyn Any);
+}
+
+impl<T> Introspect for &T
+where
+    T: Introspect,
+{
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    where
+        F: FnMut(&Breadcrumbs, &dyn Any),
+    {
+        Introspect::introspect_from(*self, breadcrumbs, visit)
+    }
+}
+
+impl<T> Introspect for &'static [T]
+where
+    T: Introspect,
+{
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
+    where
+        F: FnMut(&Breadcrumbs, &dyn Any),
+    {
+        visit(&breadcrumbs, self);
+        for (idx, child) in self.iter().enumerate() {
+            let mut breadcrumbs = breadcrumbs.clone();
+            breadcrumbs.push_back(Breadcrumb::Index(format!("{}", idx)));
+            child.introspect_from(breadcrumbs, &mut visit);
+        }
+    }
 }
 
 macro_rules! impl_primitive {
     ($t:ty) => {
-        impl Spectacle for $t {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+        impl Introspect for $t {
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
             }
@@ -107,19 +138,19 @@ impl_primitive!(
 
 macro_rules! impl_array {
     ($n:expr) => {
-        impl<T> Spectacle for [T; $n]
+        impl<T> Introspect for [T; $n]
         where
-            T: 'static + Spectacle,
+            T: 'static + Introspect,
         {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
                 for (idx, child) in self.iter().enumerate() {
                     let mut breadcrumbs = breadcrumbs.clone();
                     breadcrumbs.push_back(Breadcrumb::Index(format!("{}", idx)));
-                    child.introspect_from(breadcrumbs, &visit);
+                    child.introspect_from(breadcrumbs, &mut visit);
                 }
             }
         }
@@ -138,43 +169,43 @@ impl_array!(
 
 impl_tuples!(32);
 
-impl<T> Spectacle for Option<T>
+impl<T> Introspect for Option<T>
 where
-    T: 'static + Spectacle,
+    T: 'static + Introspect,
 {
-    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any),
+        F: FnMut(&Breadcrumbs, &dyn Any),
     {
         visit(&breadcrumbs, self);
         if let Some(t) = self {
             let mut breadcrumbs = breadcrumbs.clone();
-            breadcrumbs.push_back(Breadcrumb::EnumVariant("Some"));
-            t.introspect_from(breadcrumbs, &visit);
+            breadcrumbs.push_back(Breadcrumb::Variant("Some"));
+            t.introspect_from(breadcrumbs, &mut visit);
         }
     }
 }
 
-impl<T, E> Spectacle for Result<T, E>
+impl<T, E> Introspect for Result<T, E>
 where
-    T: 'static + Spectacle,
-    E: 'static + Spectacle,
+    T: 'static + Introspect,
+    E: 'static + Introspect,
 {
-    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any),
+        F: FnMut(&Breadcrumbs, &dyn Any),
     {
         visit(&breadcrumbs, self);
         match self {
             Ok(t) => {
                 let mut breadcrumbs = breadcrumbs.clone();
-                breadcrumbs.push_back(Breadcrumb::EnumVariant("Ok"));
-                t.introspect_from(breadcrumbs, &visit);
+                breadcrumbs.push_back(Breadcrumb::Variant("Ok"));
+                t.introspect_from(breadcrumbs, &mut visit);
             }
             Err(e) => {
                 let mut breadcrumbs = breadcrumbs.clone();
-                breadcrumbs.push_back(Breadcrumb::EnumVariant("Err"));
-                e.introspect_from(breadcrumbs, &visit);
+                breadcrumbs.push_back(Breadcrumb::Variant("Err"));
+                e.introspect_from(breadcrumbs, &mut visit);
             }
         }
     }
@@ -183,19 +214,19 @@ where
 macro_rules! impl_list {
     ($($t:ident)::+) => {
         #[cfg(feature = "collections")]
-        impl<T> Spectacle for $($t)::+<T>
+        impl<T> Introspect for $($t)::+<T>
         where
-            T: 'static + Spectacle,
+            T: 'static + Introspect,
         {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
                 for (idx, item) in self.iter().enumerate() {
                     let mut breadcrumbs = breadcrumbs.clone();
                     breadcrumbs.push_back(Breadcrumb::Index(format!("{}", idx)));
-                    item.introspect_from(breadcrumbs, &visit);
+                    item.introspect_from(breadcrumbs, &mut visit);
                 }
             }
         }
@@ -211,19 +242,19 @@ impl_list!(std::collections::LinkedList);
 macro_rules! impl_set {
     ($($t:ident)::+) => {
         #[cfg(feature = "collections")]
-        impl<T> Spectacle for $($t)::+<T>
+        impl<T> Introspect for $($t)::+<T>
         where
-            T: 'static + Spectacle,
+            T: 'static + Introspect,
         {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
                 for item in self.iter() {
                     let mut breadcrumbs = breadcrumbs.clone();
                     breadcrumbs.push_back(Breadcrumb::SetMember);
-                    item.introspect_from(breadcrumbs, &visit);
+                    item.introspect_from(breadcrumbs, &mut visit);
                 }
             }
         }
@@ -237,20 +268,20 @@ impl_set!(std::collections::BinaryHeap);
 macro_rules! impl_map {
     ($($t:ident)::+) => {
         #[cfg(feature = "collections")]
-        impl<K, V> Spectacle for $($t)::+<K, V>
+        impl<K, V> Introspect for $($t)::+<K, V>
         where
             K: 'static + std::fmt::Debug,
-            V: 'static + Spectacle,
+            V: 'static + Introspect,
         {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
                 for (k, v) in self.iter() {
                     let mut breadcrumbs = breadcrumbs.clone();
                     breadcrumbs.push_back(Breadcrumb::Index(format!("{:?}", k)));
-                    v.introspect_from(breadcrumbs, &visit);
+                    v.introspect_from(breadcrumbs, &mut visit);
                 }
             }
         }
@@ -263,10 +294,10 @@ impl_map!(std::collections::BTreeMap);
 macro_rules! impl_serde_json {
     ($($t:ident)::+) => {
         #[cfg(feature = "serde-json")]
-        impl Spectacle for $($t)::+ {
-            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+        impl Introspect for $($t)::+ {
+            fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
             where
-                F: Fn(&Breadcrumbs, &dyn Any),
+                F: FnMut(&Breadcrumbs, &dyn Any),
             {
                 visit(&breadcrumbs, self);
             }
@@ -283,53 +314,53 @@ impl_serde_json!(serde_json::Error);
 impl_serde_json!(serde_json::Number);
 
 #[cfg(feature = "serde-json")]
-impl Spectacle for serde_json::Map<String, serde_json::Value> {
-    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+impl Introspect for serde_json::Map<String, serde_json::Value> {
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any),
+        F: FnMut(&Breadcrumbs, &dyn Any),
     {
         visit(&breadcrumbs, self);
         for (k, v) in self.iter() {
             let mut breadcrumbs = breadcrumbs.clone();
             breadcrumbs.push_back(Breadcrumb::Index(format!("{}", k)));
-            v.introspect_from(breadcrumbs, &visit);
+            v.introspect_from(breadcrumbs, &mut visit);
         }
     }
 }
 
 #[cfg(feature = "serde-json")]
-impl Spectacle for serde_json::Value {
-    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, visit: F)
+impl Introspect for serde_json::Value {
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
     where
-        F: Fn(&Breadcrumbs, &dyn Any),
+        F: FnMut(&Breadcrumbs, &dyn Any),
     {
         visit(&breadcrumbs, self);
 
         match self {
             serde_json::Value::Bool(x) => {
                 let mut breadcrumbs = breadcrumbs.clone();
-                breadcrumbs.push_back(Breadcrumb::EnumVariant("Bool"));
-                x.introspect_from(breadcrumbs, &visit);
+                breadcrumbs.push_back(Breadcrumb::Variant("Bool"));
+                x.introspect_from(breadcrumbs, &mut visit);
             }
             serde_json::Value::Number(x) => {
                 let mut breadcrumbs = breadcrumbs.clone();
-                breadcrumbs.push_back(Breadcrumb::EnumVariant("Number"));
-                x.introspect_from(breadcrumbs, &visit);
+                breadcrumbs.push_back(Breadcrumb::Variant("Number"));
+                x.introspect_from(breadcrumbs, &mut visit);
             }
             serde_json::Value::String(x) => {
                 let mut breadcrumbs = breadcrumbs.clone();
-                breadcrumbs.push_back(Breadcrumb::EnumVariant("String"));
-                x.introspect_from(breadcrumbs, &visit);
+                breadcrumbs.push_back(Breadcrumb::Variant("String"));
+                x.introspect_from(breadcrumbs, &mut visit);
             }
             serde_json::Value::Array(x) => {
                 let mut breadcrumbs = breadcrumbs.clone();
-                breadcrumbs.push_back(Breadcrumb::EnumVariant("Array"));
-                x.introspect_from(breadcrumbs, &visit);
+                breadcrumbs.push_back(Breadcrumb::Variant("Array"));
+                x.introspect_from(breadcrumbs, &mut visit);
             }
             serde_json::Value::Object(x) => {
                 let mut breadcrumbs = breadcrumbs.clone();
-                breadcrumbs.push_back(Breadcrumb::EnumVariant("Object"));
-                x.introspect_from(breadcrumbs, &visit);
+                breadcrumbs.push_back(Breadcrumb::Variant("Object"));
+                x.introspect_from(breadcrumbs, &mut visit);
             }
             _ => {}
         }
