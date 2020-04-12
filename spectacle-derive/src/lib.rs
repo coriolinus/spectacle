@@ -236,7 +236,7 @@ fn recurse_variants(variants: &Punctuated<Variant, Comma>) -> Vec<TokenStream> {
                 recurse_fields(&variant.fields, |field_idx| field_name[field_idx].clone());
 
             Some(quote! {
-                Self::#name #field_names => #recurse
+                Self::#name #field_names => {#recurse}
             })
         })
         .collect()

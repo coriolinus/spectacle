@@ -80,6 +80,23 @@ where
     }
 }
 
+impl<T> Introspect for &'static [T]
+where
+    T: Introspect,
+{
+    fn introspect_from<F>(&self, breadcrumbs: Breadcrumbs, mut visit: F)
+    where
+        F: FnMut(&Breadcrumbs, &dyn Any),
+    {
+        visit(&breadcrumbs, self);
+        for (idx, child) in self.iter().enumerate() {
+            let mut breadcrumbs = breadcrumbs.clone();
+            breadcrumbs.push_back(Breadcrumb::Index(format!("{}", idx)));
+            child.introspect_from(breadcrumbs, &mut visit);
+        }
+    }
+}
+
 macro_rules! impl_primitive {
     ($t:ty) => {
         impl Introspect for $t {
