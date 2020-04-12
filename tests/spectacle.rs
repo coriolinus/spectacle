@@ -150,3 +150,14 @@ fn struct_enum() {
         b'r' => u8,
     );
 }
+
+// is the derive macro smart enough to come up with an unused generic ident for F?
+#[derive(Debug, PartialEq, Eq, Spectacle)]
+pub struct Triple<F, F0, F1>(F, F0, F1);
+
+const TRIPLE: Triple<u8, u16, u32> = Triple(0, 1, 2);
+
+#[test]
+fn derives_non_conflicting_generic_ident() {
+    expect_visits!(TRIPLE => Triple<u8, u16, u32>, 0 => u8, 1 => u16, 2 => u32);
+}
