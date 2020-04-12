@@ -79,8 +79,8 @@ fn impl_introspect_struct(name: &Ident, generics: &Generics, fields: &Fields) ->
             }
         })
         .collect();
-    let recurse =
-        recurse_fields(fields, |field_idx| field_names[field_idx].clone()).unwrap_or_default();
+    let recurse = recurse_fields(fields, |field_idx| field_names[field_idx].clone(), None)
+        .unwrap_or_default();
 
     quote! {
         impl #impl_generics spectacle::Introspect for #name #ty_generics #where_clause
@@ -99,20 +99,27 @@ fn impl_introspect_struct(name: &Ident, generics: &Generics, fields: &Fields) ->
 
 // TODO: more fine-grained control of field visibility somehow
 // for now, we'll visit all fields, even private ones
-fn recurse_fields<Accessor>(fields: &Fields, access: Accessor) -> Option<TokenStream>
+fn recurse_fields<Accessor>(
+    fields: &Fields,
+    access: Accessor,
+    inject_breadcrumb: Option<TokenStream>,
+) -> Option<TokenStream>
 where
     Accessor: Fn(usize) -> TokenStream,
 {
+    let inject_breadcrumb = inject_breadcrumb.unwrap_or_default();
+
     match fields {
         Fields::Unit => None,
         Fields::Named(fields) => {
             let recurse = fields.named.iter().enumerate().map(|(idx, field)| {
                 let name = field.ident.clone().expect("named fields have names");
-                let name_lit = syn::LitStr::new(&format!("{}", name), field.span());
+                let name_lit = syn::LitStr::new(&name.to_string(), field.span());
                 let field = access(idx);
 
                 quote! {{
                     let mut breadcrumbs = breadcrumbs.clone();
+                    #inject_breadcrumb
                     breadcrumbs.push_back(spectacle::Breadcrumb::Field(#name_lit));
                     spectacle::Introspect::introspect_from(&#field, breadcrumbs, &mut visit);
                 }}
@@ -126,6 +133,7 @@ where
 
                 quote! {{
                     let mut breadcrumbs = breadcrumbs.clone();
+                    #inject_breadcrumb
                     breadcrumbs.push_back(spectacle::Breadcrumb::TupleIndex(#idx));
                     spectacle::Introspect::introspect_from(&#field, breadcrumbs, &mut visit);
                 }}
@@ -232,8 +240,14 @@ fn recurse_variants(variants: &Punctuated<Variant, Comma>) -> Vec<TokenStream> {
                 Fields::Unnamed(_) => quote!((#( #field_name ),*)),
                 _ => unreachable!(),
             };
-            let recurse =
-                recurse_fields(&variant.fields, |field_idx| field_name[field_idx].clone());
+            let variant_lit = syn::LitStr::new(&name.to_string(), name.span());
+            let recurse = recurse_fields(
+                &variant.fields,
+                |field_idx| field_name[field_idx].clone(),
+                Some(quote! {
+                    breadcrumbs.push_back(spectacle::Breadcrumb::Variant(#variant_lit));
+                }),
+            );
 
             Some(quote! {
                 Self::#name #field_names => {#recurse}
